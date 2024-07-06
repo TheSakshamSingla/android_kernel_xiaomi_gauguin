@@ -171,6 +171,32 @@ static int ax88179_write_cmd(struct usbnet *dev, u8 cmd, u16 value, u16 index,
 	if (copy_to_user(info->buf, buf, sizeof(unsigned short) * info->size)) {
 		kfree(buf);
 		return -EFAULT;
+	if (netif_carrier_ok(dev->net) != link) {
+                usbnet_link_change(dev, link, 1);
+                if (!link)
+                        netdev_info(dev->net, "ax88179 - Link status is: 0\n");
+
+	return ret;
+}
+
+/*static void ax88179_status(struct usbnet *dev, struct urb *urb)
+{
+	struct ax88179_int_data *event;
+	u32 link;
+
+	if (urb->actual_length < 8)
+		return;
+
+	event = urb->transfer_buffer;
+	le32_to_cpus((void *)&event->intdata1);
+
+	link = (((__force u32)event->intdata1) & AX_INT_PPLS_LINK) >> 16;
+
+	if (netif_carrier_ok(dev->net) != link) {
+		usbnet_link_change(dev, link, 1);
+		if (!link)
+			netdev_info(dev->net, "ax88179 - Link status is: 0\n");
+>>>>>>> 46d5c1546743 (Merge 4.19.317 into android-4.19-stable)*/
 	}
 
 	kfree(buf);
@@ -999,11 +1025,68 @@ ax88179_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)
 	ax_read_cmd_nopm(axdev, AX_ACCESS_PHY, AX88179_PHY_ID,
 			 GMII_PHY_PHYSR, 2, &reg16, 1);
 
+<<<<<<< HEAD
 	if (!(reg16 & GMII_PHY_PHYSR_LINK)) {
 		return -1;
 	} else if (GMII_PHY_PHYSR_GIGA == (reg16 & GMII_PHY_PHYSR_SMASK)) {
 		mode |= AX_MEDIUM_GIGAMODE;
 		if (axdev->netdev->mtu > 1500)
+=======
+	if ((skb_header_cloned(skb) || headroom < 0) &&
+	    pskb_expand_head(skb, headroom < 0 ? 8 : 0, 0, GFP_ATOMIC)) {
+		dev_kfree_skb_any(skb);
+		return NULL;
+	}
+
+	skb_push(skb, 4);
+	cpu_to_le32s(&tx_hdr2);
+	skb_copy_to_linear_data(skb, &tx_hdr2, 4);
+
+	skb_push(skb, 4);
+	cpu_to_le32s(&tx_hdr1);
+	skb_copy_to_linear_data(skb, &tx_hdr1, 4);
+
+	return skb;
+}
+
+static int ax88179_link_reset(struct usbnet *dev)
+{
+	struct ax88179_data *ax179_data = (struct ax88179_data *)dev->data;
+	u8 tmp[5], link_sts;
+	u16 mode, tmp16, delay = HZ / 10;
+	u32 tmp32 = 0x40000000;
+	unsigned long jtimeout;
+
+	jtimeout = jiffies + delay;
+	while (tmp32 & 0x40000000) {
+		mode = 0;
+		ax88179_write_cmd(dev, AX_ACCESS_MAC, AX_RX_CTL, 2, 2, &mode);
+		ax88179_write_cmd(dev, AX_ACCESS_MAC, AX_RX_CTL, 2, 2,
+				  &ax179_data->rxctl);
+
+		/*link up, check the usb device control TX FIFO full or empty*/
+		ax88179_read_cmd(dev, 0x81, 0x8c, 0, 4, &tmp32);
+
+		if (time_after(jiffies, jtimeout))
+			return 0;
+	}
+
+	mode = AX_MEDIUM_RECEIVE_EN | AX_MEDIUM_TXFLOW_CTRLEN |
+	       AX_MEDIUM_RXFLOW_CTRLEN;
+
+	ax88179_read_cmd(dev, AX_ACCESS_MAC, PHYSICAL_LINK_STATUS,
+			 1, 1, &link_sts);
+
+	ax88179_read_cmd(dev, AX_ACCESS_PHY, AX88179_PHY_ID,
+			 GMII_PHY_PHYSR, 2, &tmp16);
+
+	if (!(tmp16 & GMII_PHY_PHYSR_LINK)) {
+		netdev_info(dev->net, "ax88179 - Link status is: 0\n");
+		return 0;
+	} else if (GMII_PHY_PHYSR_GIGA == (tmp16 & GMII_PHY_PHYSR_SMASK)) {
+		mode |= AX_MEDIUM_GIGAMODE | AX_MEDIUM_EN_125MHZ;
+		if (dev->net->mtu > 1500)
+>>>>>>> 46d5c1546743 (Merge 4.19.317 into android-4.19-stable)
 			mode |= AX_MEDIUM_JUMBO_EN;
 
 		if (link_sts & AX_USB_SS)
@@ -1262,6 +1345,8 @@ static int ax88179_system_suspend(struct ax_device *axdev)
 
 	reg16 = AX_RX_CTL_STOP;
 	ax_write_cmd_nopm(axdev, AX_ACCESS_MAC, AX_RX_CTL, 2, 2, &reg16);
+
+	netdev_info(dev->net, "ax88179 - Link status is: 1\n");
 
 	return 0;
 }
