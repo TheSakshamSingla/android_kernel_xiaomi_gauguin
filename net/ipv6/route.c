@@ -2287,6 +2287,7 @@ static struct dst_entry *ip6_negative_advice(struct dst_entry *dst)
 {
 	struct rt6_info *rt = (struct rt6_info *) dst;
 
+/*<<<<<<< HEAD
 	if (rt) {
 		if (rt->rt6i_flags & RTF_CACHE) {
 			rcu_read_lock();
@@ -2298,6 +2299,16 @@ static struct dst_entry *ip6_negative_advice(struct dst_entry *dst)
 		} else {
 			dst_release(dst);
 			dst = NULL;
+=======*/
+	if (rt->rt6i_flags & RTF_CACHE) {
+		rcu_read_lock();
+		if (rt6_check_expired(rt)) {
+			/* rt/dst can not be destroyed yet,
+			 * because of rcu_read_lock()
+			 */
+			sk_dst_reset(sk);
+			rt6_remove_exception_rt(rt);
+/*>>>>>>> c131e8512c3a (Merge tag 'v4.19.326' of https://github.com/frstprjkt/kernel-lts into 14)*/
 		}
 	}
 	return dst;
