@@ -250,7 +250,6 @@ calc_rate(unsigned long rate, u32 m, u32 n, u32 mode, u32 hid_div)
 		tmp *= m;
 		do_div(tmp, n);
 	}
-
 	return tmp;
 }
 

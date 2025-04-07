@@ -121,7 +121,7 @@
 #endif
 		.endm
 
-		.section ".start", #alloc, #execinstr
+		.section ".start", #alloc, #execinstr, "ax"
 /*
  * sort out different calling conventions
  */
