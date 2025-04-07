@@ -94,5 +94,4 @@ static inline void npu_process_log_message(struct npu_device *npu_dev, uint32_t 
     uint32_t size) { }
 #endif
 
-
 #endif /* _NPU_HW_ACCESS_H*/
