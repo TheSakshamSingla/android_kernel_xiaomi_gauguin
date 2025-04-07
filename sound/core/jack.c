@@ -378,13 +378,13 @@ void snd_jack_report(struct snd_jack *jack, int status)
 
 #ifdef CONFIG_SND_JACK_INPUT_DEV
 	if (!jack->input_dev)
-		return;
+ 		return;
 
 	for (i = 0; i < ARRAY_SIZE(jack->key); i++) {
 		int testbit = SND_JACK_BTN_0 >> i;
 
 		if (jack->type & testbit)
-			input_report_key(jack->input_dev, jack->key[i],
+				input_report_key(jack->input_dev, jack->key[i],
 					 status & testbit);
 	}
 
