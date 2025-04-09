@@ -21,7 +21,7 @@ jobs:
 
     - name: Clone Clang Toolchain
       run: |
-        git clone --depth=1 https://github.com/ZyCromerZ/clang-r450784d.git clang
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
         echo "CLANG_PATH=$(pwd)/clang/bin" >> $GITHUB_ENV
 
     - name: Build Kernel
