@@ -1,50 +1,49 @@
 name: Build Kernel with KernelSU Next
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build Kernel
     runs-on: ubuntu-latest
-    name: Compile Kernel and Package with AnyKernel3
 
     steps:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
-      with:
-        submodules: true
 
-    - name: Set Up Environment Variables
+    - name: Install Dependencies
       run: |
-        echo "KERNEL_DEFCONFIG=gauguin_defconfig" >> $GITHUB_ENV
-        echo "ANYKERNEL_DIR=$GITHUB_WORKSPACE/AnyKernel3" >> $GITHUB_ENV
-        echo "CLANG_DIR=$GITHUB_WORKSPACE/clang" >> $GITHUB_ENV
-        echo "IMAGE=$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb" >> $GITHUB_ENV
+        sudo apt update
+        sudo apt install -y bc bison build-essential curl flex git kmod libssl-dev \
+        libncurses-dev lzop python3 unzip zip zstd cpio libelf-dev \
+        gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
     - name: Clone Clang Toolchain
       run: |
-        git clone --depth=1 https://github.com/llvm/llvm-project.git $CLANG_DIR
+        git clone --depth=1 https://github.com/ZyCromerZ/clang-r450784d.git clang
+        echo "CLANG_PATH=$(pwd)/clang/bin" >> $GITHUB_ENV
 
     - name: Build Kernel
       run: |
-        export PATH=$CLANG_DIR/bin:$PATH
-        make O=out ARCH=arm64 $KERNEL_DEFCONFIG
-        make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        export PATH=$CLANG_PATH:$PATH
+        make O=out ARCH=arm64 vendor/gauguin_defconfig
+        make -j$(nproc) O=out \
+          ARCH=arm64 \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-    - name: Package Kernel with AnyKernel3
+    - name: Package Kernel (AnyKernel3)
       run: |
-        cp $IMAGE $ANYKERNEL_DIR/
-        cd $ANYKERNEL_DIR
-        zip -r9 KernelSU-Next-Gauguin.zip ./*
+        git clone https://github.com/osm0sis/AnyKernel3 -b master AnyKernel3
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3
+        zip -r9 ../gauguin-KernelSU-Next.zip ./*
 
-    - name: Upload Flashable Zip
+    - name: Upload Flashable ZIP
       uses: actions/upload-artifact@v4
       with:
         name: KernelSU-Next-Gauguin
-        path: ${{ env.ANYKERNEL_DIR }}/KernelSU-Next-Gauguin.zip
+        path: gauguin-KernelSU-Next.zip
