@@ -1,49 +1,24 @@
-name: Build Kernel with KernelSU Next
+name: Kernel Build
 
 on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Kernel
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Kernel Source
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Install Dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y bc bison build-essential curl flex git kmod libssl-dev \
-        libncurses-dev lzop python3 unzip zip zstd cpio libelf-dev \
-        gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+    - name: Set Execute Permission for build.sh
+      run: chmod +x build.sh
 
-    - name: Clone Clang Toolchain
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-        echo "CLANG_PATH=$(pwd)/clang/bin" >> $GITHUB_ENV
-
-    - name: Build Kernel
-      run: |
-        export PATH=$CLANG_PATH:$PATH
-        make O=out ARCH=arm64 vendor/gauguin_defconfig
-        make -j$(nproc) O=out \
-          ARCH=arm64 \
-          CC=clang \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-    - name: Package Kernel (AnyKernel3)
-      run: |
-        git clone https://github.com/osm0sis/AnyKernel3 -b master AnyKernel3
-        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-        cd AnyKernel3
-        zip -r9 ../gauguin-KernelSU-Next.zip ./*
-
-    - name: Upload Flashable ZIP
-      uses: actions/upload-artifact@v4
-      with:
-        name: KernelSU-Next-Gauguin
-        path: gauguin-KernelSU-Next.zip
+    - name: Run build.sh Script
+      run: ./build.sh
