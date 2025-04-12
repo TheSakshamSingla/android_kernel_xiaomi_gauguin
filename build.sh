@@ -1,169 +1,76 @@
-#!/usr/bin/env bash
-#
-#  build.sh - Automic kernel building script for Rosemary Kernel
-#
-#  Copyright (C) 2021-2022, Crepuscular's AOSP WorkGroup
-#  Author: EndCredits <alicization.han@gmail.com>
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License version 2 as
-#  published by the Free Software Foundation.
-#
-#  Add clang to your PATH before using this script.
-#
+#!/bin/bash
 
-LOCAL_VERSION_NUMBER=Neko-v0.1
+echo -e "\n[INFO]: BUILD STARTED..!\n"
 
-ARCH=arm64;
-CC=clang;
-CLANG_TRIPLE=../clang-prelude/bin/aarch64-linux-gnu-;
-CROSS_COMPILE=../gcc-arm64/bin/aarch64-none-linux-gnu-;
-CROSS_COMPILE_COMPAT=../gcc-arm32/bin/arm-none-linux-gnueabihf-;
-THREAD=$(nproc --all);
-CC_ADDITION_FLAGS="OBJDUMP=llvm-objdump";
-OUT="../out";
+#init submodules
+git submodule init && git submodule update
 
-TARGET_KERNEL_FILE=arch/arm64/boot/Image;
-TARGET_KERNEL_DTB=arch/arm64/boot/dtb;
-TARGET_KERNEL_DTBO=arch/arm64/boot/dtbo.img
-TARGET_KERNEL_NAME=Kernel;
-TARGET_KERNEL_MOD_VERSION=$(make kernelversion)-$LOCAL_VERSION_NUMBER;
+export KERNEL_ROOT="$(pwd)"
+export ARCH=arm64
+export KBUILD_BUILD_USER="@saksham"
 
-DEFCONFIG_PATH=arch/arm64/configs
-DEFCONFIG_NAME=vendor/gauguin_user_defconfig;
+# Install the requirements for building the kernel when running the script for the first time
+if [ ! -f ".requirements" ]; then
+    sudo apt update && sudo apt install -y git device-tree-compiler lz4 xz-utils zlib1g-dev openjdk-17-jdk gcc g++ python3 python-is-python3 p7zip-full android-sdk-libsparse-utils erofs-utils \
+        default-jdk git gnupg flex bison gperf build-essential zip curl libc6-dev libncurses-dev libx11-dev libreadline-dev libgl1 libgl1-mesa-dev \
+        python3 make sudo gcc g++ bc grep tofrodos python3-markdown libxml2-utils xsltproc zlib1g-dev python-is-python3 libc6-dev libtinfo6 \
+        make repo cpio kmod openssl libelf-dev pahole libssl-dev libarchive-tools zstd --fix-missing && wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb && sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb && touch .requirements
+fi
 
-START_SEC=$(date +%s);
-CURRENT_TIME=$(date '+%Z-%Y-%m-%d-%H%M');
+# Create necessary directories
+mkdir -p "${KERNEL_ROOT}/out" "${KERNEL_ROOT}/build" "${HOME}/toolchains"
 
-ANYKERNEL_URL=https://codeload.github.com/Molyuu/AnyKernel3/zip/refs/heads/main;
-ANYKERNEL_PATH=AnyKernel3-main;
-ANYKERNEL_FILE=anykernel.zip;
+# init clang-r353983c
+if [ ! -d "${HOME}/toolchains/clang-r353983c" ]; then
+    echo -e "\n[INFO] Cloning clang-r353983c...\n"
+    mkdir -p "${HOME}/toolchains/clang-r353983c" && cd "${HOME}/toolchains/clang-r353983c"
+    curl -LO "https://github.com/ravindu644/Android-Kernel-Tutorials/releases/download/toolchains/clang-r353983c.tar.gz"
+    tar -xf clang-r353983c.tar.gz && rm clang-r353983c.tar.gz
+    cd "${KERNEL_ROOT}"
+fi
 
-link_all_dtb_files(){
-    find $OUT/arch/arm64/boot/dts/vendor/qcom -name '*.dtb' -exec cat {} + > $OUT/arch/arm64/boot/dtb;
-}
+# init arm gnu toolchain
+if [ ! -d "${HOME}/toolchains/gcc" ]; then
+    echo -e "\n[INFO] Cloning ARM GNU Toolchain\n"
+    mkdir -p "${HOME}/toolchains/gcc" && cd "${HOME}/toolchains/gcc"
+    curl -LO "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz"
+    tar -xf arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+    cd "${KERNEL_ROOT}"
+fi
 
-make_defconfig(){
-    echo "------------------------------";
-    echo " Building Kernel Defconfig..";
-    echo "------------------------------";
+# Export toolchain paths
+export PATH="${PATH}:${HOME}/toolchains/clang-r353983c/bin"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${HOME}/toolchains/clang-r353983c/lib64"
 
-    make CC=$CC ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_COMPAT=$CROSS_COMPILE_COMPAT O=$OUT -j$THREAD $DEFCONFIG_NAME;
-}
+# Set cross-compile environment variables
+export BUILD_CROSS_COMPILE="${HOME}/toolchains/gcc/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-"
+export BUILD_CC="${HOME}/toolchains/clang-r353983c/bin/clang"
+
+# Build options for the kernel
+export BUILD_OPTIONS="
+-C ${KERNEL_ROOT} \
+O=${KERNEL_ROOT}/out \
+-j$(nproc) \
+ARCH=arm64 \
+CROSS_COMPILE=${BUILD_CROSS_COMPILE} \
+CC=${BUILD_CC} \
+CLANG_TRIPLE=aarch64-linux-gnu- \
+"
 
 build_kernel(){
-    echo "------------------------------";
-    echo " Building Kernel ...........";
-    echo "------------------------------";
-    
-    rm -rf $OUT/AnyKernel3-main;
-    make CC=$CC ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_COMPAT=$CROSS_COMPILE_COMPAT CLANG_TRIPLE=$CLANG_TRIPLE $CC_ADDITION_FLAGS O=$OUT -j$THREAD;
-    END_SEC=$(date +%s);
-    COST_SEC=$[ $END_SEC-$START_SEC ];
-    echo "Kernel Build Costed $(($COST_SEC/60))min $(($COST_SEC%60))s"
+    # Make default configuration.
+    # Replace 'your_defconfig' with the name of your kernel's defconfig
+    make ${BUILD_OPTIONS} gauguin_defconfig
 
+    # Configure the kernel (GUI)
+    make ${BUILD_OPTIONS} menuconfig
+
+    # Build the kernel
+    make ${BUILD_OPTIONS} Image || exit 1
+
+    # Copy the built kernel to the build directory
+    cp "${KERNEL_ROOT}/out/arch/arm64/boot/Image" "${KERNEL_ROOT}/build"
+
+    echo -e "\n[INFO]: BUILD FINISHED..!"
 }
-
-generate_flashable(){
-    echo "------------------------------";
-    echo " Generating Flashable Kernel";
-    echo "------------------------------";
-
-    cd $OUT;
-    
-    echo ' Getting AnyKernel ';
-    curl $ANYKERNEL_URL -o $ANYKERNEL_FILE;
-
-    unzip -o $ANYKERNEL_FILE;
-
-    echo ' Removing old package file ';
-    rm -rf $ANYKERNEL_PATH/Kernel-CST-*;
-
-    echo ' Copying Kernel File '; 
-    cp -r $TARGET_KERNEL_FILE $ANYKERNEL_PATH/;
-    cp -r $TARGET_KERNEL_DTB $ANYKERNEL_PATH/;
-    cp -r $TARGET_KERNEL_DTBO $ANYKERNEL_PATH/;
-
-    echo ' Packaging flashable Kernel ';
-    cd $ANYKERNEL_PATH;
-    zip -q -r $TARGET_KERNEL_NAME-$CURRENT_TIME-$TARGET_KERNEL_MOD_VERSION.zip *;
-
-    echo " Target File:  $OUT/$ANYKERNEL_PATH/$TARGET_KERNEL_NAME-$CURRENT_TIME-$TARGET_KERNEL_MOD_VERSION.zip ";
-}
-
-save_defconfig(){
-    echo "------------------------------";
-    echo " Saving kernel config ........";
-    echo "------------------------------";
-
-    make CC=$CC ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_COMPAT=$CROSS_COMPILE_COMPAT CLANG_TRIPLE=$CLANG_TRIPLE $CC_ADDITION_FLAGS O=$OUT -j$THREAD savedefconfig;
-    END_SEC=$(date +%s);
-    COST_SEC=$[ $END_SEC-$START_SEC ];
-    echo "Finished. Kernel config saved to $OUT/defconfig"
-    echo "Moving kernel defconfig to source tree"
-    mv $OUT/defconfig $DEFCONFIG_PATH/$DEFCONFIG_NAME
-    echo "Kernel Config Build Costed $(($COST_SEC/60))min $(($COST_SEC%60))s"
-
-}
-
-clean(){
-    echo "Clean source tree and build files..."
-    make mrproper -j$THREAD;
-    make clean -j$THREAD;
-    rm -rf $OUT;
-}
-
-main(){
-    if [ $1 == "help" -o $1 == "-h" ]
-    then
-        echo "build.sh: A very simple Kernel build helper"
-        echo "usage: build.sh <build option>"
-        echo
-        echo "Build options:"
-        echo "    all             Perform a build without cleaning."
-        echo "    cleanbuild      Clean the source tree and build files then perform a all build."
-        echo
-        echo "    flashable       Only generate the flashable zip file. Don't use it before you have built once."
-        echo "    savedefconfig   Save the defconfig file to source tree."
-        echo "    defconfig       Only build kernel defconfig"
-        echo "    help ( -h )     Print help information."
-        echo "    version         Display the version number."
-        echo
-    elif [ $1 == "savedefconfig" ]
-    then
-        save_defconfig;
-    elif [ $1 == "cleanbuild" ]
-    then
-        clean;
-        make_defconfig;
-        build_kernel;
-        link_all_dtb_files;
-        generate_flashable;
-    elif [ $1 == "flashable" ]
-    then
-        generate_flashable;
-    elif [ $1 == "kernelonly" ]
-    then
-        make_defconfig
-        build_kernel
-    elif [ $1 == "all" ]
-    then
-        make_defconfig
-        build_kernel
-        link_all_dtb_files
-        generate_flashable
-    elif [ $1 == "defconfig" ]
-    then
-        make_defconfig;
-    elif [ $1 == "version" ] 
-    then 
-        echo "Current version is: $LOCAL_VERSION_NUMBER"
-    else
-        echo "Incorrect usage. Please run: "
-        echo "  bash build.sh help (or -h) "
-        echo "to display help message."
-    fi
-}
-
-main "$1";
-
+build_kernel
